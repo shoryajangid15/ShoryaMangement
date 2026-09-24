@@ -1,0 +1,31 @@
+{
+  "name": "kaspertechwork",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/shoryajangid15/ShoryaMangement#readme",
+  "bugs": {
+    "url": "https://github.com/shoryajangid15/ShoryaMangement/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shoryajangid15/ShoryaMangement.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^18.0.3",
+    "express": "^5.2.1",
+    "mongoose": "^9.10.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
