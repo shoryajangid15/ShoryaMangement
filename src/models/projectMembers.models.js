@@ -17,7 +17,12 @@ const projectMemberSchema = new mongoose.Schema({
     roleId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Role",
-        required: true
+        required: false
+    },
+
+    permissions: {
+        type: [mongoose.Schema.Types.String],
+        default: ["read"]
     },
 
     joinedAt: {

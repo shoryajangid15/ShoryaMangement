@@ -9,7 +9,7 @@ const projectSchema = new mongoose.Schema({
 
     description: {
         type: mongoose.Schema.Types.String,
-        required: true
+        required: false
     },
 
     status: {
@@ -26,7 +26,7 @@ const projectSchema = new mongoose.Schema({
     defaultRoleId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Role",
-        required: true
+        required: false
     },
 
     createdBy: {

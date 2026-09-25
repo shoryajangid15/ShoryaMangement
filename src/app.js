@@ -3,6 +3,8 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 
 const adminRoutes = require("./routes/admin.routes");
+const projectRoutes = require("./routes/projects.routes");
+const userRoutes = require("./routes/users.routes");
 const seedDefaultAdmin = require("./utils/seedAdmin");
 
 const app = express();
@@ -26,5 +28,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/admin", adminRoutes);
+app.use("/api/projects", projectRoutes);
+app.use("/api/users", userRoutes);
 
 module.exports = app;
