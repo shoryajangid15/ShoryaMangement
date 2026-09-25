@@ -24,8 +24,6 @@ const seedDefaultAdmin = async () => {
                 existingAdmin.passwordHash = await bcrypt.hash(defaultPassword, 10);
                 await existingAdmin.save();
                 console.log(`Existing Admin password updated to secure bcrypt hash!`);
-            } else {
-                console.log(`Default Admin already exists with hashed password: ${defaultEmail}`);
             }
         }
     } catch (error) {

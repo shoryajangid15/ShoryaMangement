@@ -21,7 +21,7 @@ const loginAdmin = async (req, res) => {
             });
         }
 
-        // Compare password using bcrypt
+        
         const isMatch = await bcrypt.compare(password, admin.passwordHash);
 
         if (!isMatch) {
