@@ -1,6 +1,7 @@
 const File = require("../models/file.models");
 const fs = require("fs");
 const path = require("path");
+const createAuditLog = require("../utils/createAuditLog");
 
 // 1. Upload File
 const uploadFile = async (req, res) => {
@@ -34,6 +35,20 @@ const uploadFile = async (req, res) => {
             fileUrl,
             mimeType: req.file.mimetype,
             size: req.file.size
+        });
+
+        // 📝 Create Audit Log entry for file upload
+        await createAuditLog({
+            userId: uploadedBy,
+            projectId,
+            action: "UPLOAD_FILE",
+            entityType: "File",
+            entityId: newFile._id,
+            details: {
+                fileName: newFile.originalName,
+                fileSize: newFile.size,
+                mimeType: newFile.mimeType
+            }
         });
 
         res.status(201).json({
@@ -79,6 +94,7 @@ const getProjectFiles = async (req, res) => {
 const deleteFile = async (req, res) => {
     try {
         const { fileId } = req.params;
+        const userId = req.user?.id || req.body?.userId || req.query?.userId || req.headers?.userid;
 
         const file = await File.findById(fileId);
         if (!file) {
@@ -94,6 +110,20 @@ const deleteFile = async (req, res) => {
         }
 
         await File.findByIdAndDelete(fileId);
+
+        // 📝 Create Audit Log entry for file deletion
+        if (userId) {
+            await createAuditLog({
+                userId,
+                projectId: file.projectId,
+                action: "DELETE_FILE",
+                entityType: "File",
+                entityId: file._id,
+                details: {
+                    fileName: file.originalName
+                }
+            });
+        }
 
         res.status(200).json({
             success: true,
