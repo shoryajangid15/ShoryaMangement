@@ -4,8 +4,8 @@ const ProjectMember = require("../models/projectMembers.models");
 const checkPermission = (requiredPermission) => {
     return async (req, res, next) => {
         try {
-            const { projectId } = req.body.projectId ? req.body : req.params;
-            const userId = req.user ? req.user.id : req.body.userId;
+            const projectId = req.body?.projectId || req.params?.projectId || req.query?.projectId;
+            const userId = req.user?.id || req.body?.userId;
 
             if (!projectId || !userId) {
                 return res.status(400).json({
