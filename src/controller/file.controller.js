@@ -2,6 +2,7 @@ const File = require("../models/file.models");
 const fs = require("fs");
 const path = require("path");
 const createAuditLog = require("../utils/createAuditLog");
+const { getPaginationParams, formatPaginatedResponse } = require("../utils/paginate");
 
 // 1. Upload File
 const uploadFile = async (req, res) => {
@@ -68,18 +69,25 @@ const uploadFile = async (req, res) => {
     }
 };
 
-// 2. Get All Files of a Project
+// 2. Get All Files of a Project (Paginated)
 const getProjectFiles = async (req, res) => {
     try {
         const { projectId } = req.params;
+        const { page, limit, skip } = getPaginationParams(req.query);
 
-        const files = await File.find({ projectId })
+        const filter = { projectId };
+        const total = await File.countDocuments(filter);
+
+        const files = await File.find(filter)
             .populate("uploadedBy", "name email")
-            .populate("projectId", "name");
+            .populate("projectId", "name")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
 
         res.status(200).json({
             success: true,
-            data: files
+            ...formatPaginatedResponse({ data: files, total, page, limit })
         });
     } catch (error) {
         res.status(500).json({

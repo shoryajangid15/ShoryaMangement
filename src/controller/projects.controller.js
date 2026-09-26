@@ -3,6 +3,7 @@ const ProjectMember = require("../models/projectMembers.models");
 const User = require("../models/users.models");
 const Invitation = require("../models/invitation.models");
 const generateJoinCode = require("../utils/generateJoinCode");
+const { getPaginationParams, formatPaginatedResponse } = require("../utils/paginate");
 
 // 1. Create a New Project (Only Admin)
 const createProject = async (req, res) => {
@@ -169,18 +170,24 @@ const updateMemberPermissions = async (req, res) => {
     }
 };
 
-// 4. Get Project Members with Permissions
+// 4. Get Project Members with Permissions (Paginated)
 const getProjectMembers = async (req, res) => {
     try {
         const { projectId } = req.params;
+        const { page, limit, skip } = getPaginationParams(req.query);
 
-        const members = await ProjectMember.find({ projectId })
+        const filter = { projectId };
+        const total = await ProjectMember.countDocuments(filter);
+
+        const members = await ProjectMember.find(filter)
             .populate("userId", "name email mobile isActive")
-            .populate("projectId", "name joinCode");
+            .populate("projectId", "name joinCode")
+            .skip(skip)
+            .limit(limit);
 
         res.status(200).json({
             success: true,
-            data: members
+            ...formatPaginatedResponse({ data: members, total, page, limit })
         });
     } catch (error) {
         res.status(500).json({
@@ -191,15 +198,21 @@ const getProjectMembers = async (req, res) => {
     }
 };
 
-// 5. Get All Projects
+// 5. Get All Projects (Paginated)
 const getAllProjects = async (req, res) => {
     try {
+        const { page, limit, skip } = getPaginationParams(req.query);
+
+        const total = await Project.countDocuments();
         const projects = await Project.find()
-            .populate("createdBy", "name email");
+            .populate("createdBy", "name email")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
 
         res.status(200).json({
             success: true,
-            data: projects
+            ...formatPaginatedResponse({ data: projects, total, page, limit })
         });
     } catch (error) {
         res.status(500).json({
