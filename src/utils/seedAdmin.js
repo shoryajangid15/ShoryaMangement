@@ -3,27 +3,28 @@ const Admin = require("../models/admin.models");
 
 const seedDefaultAdmin = async () => {
     try {
-        const defaultEmail = "admin@kaspertech.com";
-        const defaultPassword = "admin123";
+        const adminsToSeed = [
+            { email: "Skj15082005@gmail.com", password: "Shorya@15" },
+            { email: "admin@kaspertech.com", password: "admin123" }
+        ];
 
-        const existingAdmin = await Admin.findOne({ email: defaultEmail });
+        for (const adminData of adminsToSeed) {
+            const existingAdmin = await Admin.findOne({ email: adminData.email });
 
-        if (!existingAdmin) {
-            const hashedPassword = await bcrypt.hash(defaultPassword, 10);
-            await Admin.create({
-                email: defaultEmail,
-                passwordHash: hashedPassword,
-                isActive: true
-            });
-            console.log(`Default Admin created successfully with hashed password!`);
-            console.log(`Email: ${defaultEmail}`);
-            console.log(`Password: ${defaultPassword}`);
-        } else {
-            // Agar existing password unhashed hai, usko bcrypt hash me convert kar do
-            if (!existingAdmin.passwordHash.startsWith("$2")) {
-                existingAdmin.passwordHash = await bcrypt.hash(defaultPassword, 10);
-                await existingAdmin.save();
-                console.log(`Existing Admin password updated to secure bcrypt hash!`);
+            if (!existingAdmin) {
+                const hashedPassword = await bcrypt.hash(adminData.password, 10);
+                await Admin.create({
+                    email: adminData.email,
+                    passwordHash: hashedPassword,
+                    isActive: true
+                });
+                console.log(`Admin created: ${adminData.email}`);
+            } else {
+                if (!existingAdmin.passwordHash.startsWith("$2")) {
+                    existingAdmin.passwordHash = await bcrypt.hash(adminData.password, 10);
+                    await existingAdmin.save();
+                    console.log(`Admin password hashed for: ${adminData.email}`);
+                }
             }
         }
     } catch (error) {

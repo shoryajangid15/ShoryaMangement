@@ -1,7 +1,10 @@
+const fs = require("fs");
 const Project = require("../models/projects.models");
 const ProjectMember = require("../models/projectMembers.models");
 const User = require("../models/users.models");
 const Invitation = require("../models/invitation.models");
+const File = require("../models/file.models");
+const createAuditLog = require("../utils/createAuditLog");
 const generateJoinCode = require("../utils/generateJoinCode");
 const { getPaginationParams, formatPaginatedResponse } = require("../utils/paginate");
 
@@ -223,10 +226,181 @@ const getAllProjects = async (req, res) => {
     }
 };
 
+// 6. Delete Project
+const deleteProject = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const mongoose = require("mongoose");
+
+        if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found or invalid ID"
+            });
+        }
+
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found"
+            });
+        }
+
+        // 1. Delete associated files documents & disk files
+        try {
+            const files = await File.find({ projectId });
+            for (const file of files) {
+                if (file.path && fs.existsSync(file.path)) {
+                    try { fs.unlinkSync(file.path); } catch (e) {}
+                }
+            }
+            await File.deleteMany({ projectId });
+        } catch (fileErr) {
+            console.warn("Could not delete project files:", fileErr.message);
+        }
+
+        // 2. Delete associated project members
+        await ProjectMember.deleteMany({ projectId });
+
+        // 3. Delete associated invitations
+        await Invitation.deleteMany({ projectId });
+
+        // 4. Delete the project itself
+        await Project.findByIdAndDelete(projectId);
+
+        // 5. Create audit log
+        try {
+            const adminId = req.headers.authorization ? req.headers.authorization.replace("Bearer ", "") : null;
+            await createAuditLog({
+                userId: adminId,
+                projectId: null,
+                action: "PROJECT_DELETE",
+                entityType: "Project",
+                entityId: projectId,
+                details: { projectName: project.name }
+            });
+        } catch (auditErr) {}
+
+        res.status(200).json({
+            success: true,
+            message: `Project "${project.name}" deleted successfully from database`
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to delete project",
+            error: error.message
+        });
+    }
+};
+
+// 7. Update Project Details (Name, Description, Status)
+const updateProject = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const { name, title, description, status, userId } = req.body;
+        const mongoose = require("mongoose");
+
+        if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found or invalid ID"
+            });
+        }
+
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found"
+            });
+        }
+
+        const newName = name || title;
+        if (newName !== undefined && newName.trim() !== "") {
+            project.name = newName.trim();
+        }
+        if (description !== undefined) {
+            project.description = description.trim();
+        }
+        if (status !== undefined && status.trim() !== "") {
+            project.status = status.trim();
+        }
+
+        await project.save();
+
+        const performingUserId = userId || req.headers?.userid || req.user?.id;
+        if (performingUserId) {
+            await createAuditLog({
+                userId: performingUserId,
+                projectId: project._id,
+                action: "UPDATE_PROJECT",
+                entityType: "Project",
+                entityId: project._id,
+                details: {
+                    updatedName: project.name,
+                    updatedDescription: project.description,
+                    updatedStatus: project.status
+                }
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Project details updated successfully",
+            data: project
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to update project details",
+            error: error.message
+        });
+    }
+};
+
+// 8. Get Single Project By ID
+const getProjectById = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const mongoose = require("mongoose");
+
+        if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found or invalid ID"
+            });
+        }
+
+        const project = await Project.findById(projectId).populate("createdBy", "name email");
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found"
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: project
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch project",
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     createProject,
     addOrInviteUserToProject,
     updateMemberPermissions,
     getProjectMembers,
-    getAllProjects
+    getAllProjects,
+    deleteProject,
+    updateProject,
+    getProjectById
 };

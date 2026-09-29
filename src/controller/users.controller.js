@@ -2,6 +2,9 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/users.models");
 const Invitation = require("../models/invitation.models");
 const ProjectMember = require("../models/projectMembers.models");
+const createAuditLog = require("../utils/createAuditLog");
+const { getPaginationParams, formatPaginatedResponse } = require("../utils/paginate");
+
 
 // 1. Register User (Checks for Pending Project Invites)
 const registerUser = async (req, res) => {
@@ -137,7 +140,108 @@ const loginUser = async (req, res) => {
     }
 };
 
+// 3. Delete User
+const deleteUser = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const performingUserId = req.body.performingUserId || req.query.performingUserId;
+
+        const user = await User.findById(id);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        // Remove user's project memberships
+        await ProjectMember.deleteMany({ userId: id });
+
+        // Remove user's pending invitations if any
+        await Invitation.deleteMany({ email: user.email });
+
+        // Delete user
+        await User.findByIdAndDelete(id);
+
+        if (performingUserId) {
+            await createAuditLog({
+                userId: performingUserId,
+                action: "delete_user",
+                entityType: "User",
+                entityId: id,
+                details: { deletedUserEmail: user.email, deletedUserName: user.name }
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "User deleted successfully",
+            data: { id, email: user.email, name: user.name }
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to delete user",
+            error: error.message
+        });
+    }
+};
+
+// 4. Get All Users (Paginated)
+const getAllUsers = async (req, res) => {
+    try {
+        const { page, limit, skip } = getPaginationParams(req.query);
+
+        const total = await User.countDocuments();
+        const users = await User.find()
+            .select("-passwordHash")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        res.status(200).json({
+            success: true,
+            ...formatPaginatedResponse({ data: users, total, page, limit })
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch users",
+            error: error.message
+        });
+    }
+};
+
+// 5. Get User By ID
+const getUserById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await User.findById(id).select("-passwordHash");
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+        res.status(200).json({
+            success: true,
+            data: user
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch user",
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     registerUser,
-    loginUser
+    loginUser,
+    deleteUser,
+    getAllUsers,
+    getUserById
 };
+

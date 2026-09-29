@@ -38,7 +38,7 @@ const uploadFile = async (req, res) => {
             size: req.file.size
         });
 
-        // 📝 Create Audit Log entry for file upload
+        // Create Audit Log entry for file upload
         await createAuditLog({
             userId: uploadedBy,
             projectId,
@@ -119,7 +119,7 @@ const deleteFile = async (req, res) => {
 
         await File.findByIdAndDelete(fileId);
 
-        // 📝 Create Audit Log entry for file deletion
+        // Create Audit Log entry for file deletion
         if (userId) {
             await createAuditLog({
                 userId,
@@ -146,8 +146,65 @@ const deleteFile = async (req, res) => {
     }
 };
 
+// 4. Rename File (Updates originalName in DB)
+const renameFile = async (req, res) => {
+    try {
+        const { fileId } = req.params;
+        const newName = req.body.originalName || req.body.newName || req.body.name;
+        const userId = req.user?.id || req.body?.userId || req.query?.userId || req.headers?.userid;
+
+        if (!newName || !newName.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: "New file name is required"
+            });
+        }
+
+        const file = await File.findById(fileId);
+        if (!file) {
+            return res.status(404).json({
+                success: false,
+                message: "File not found"
+            });
+        }
+
+        const oldName = file.originalName;
+        file.originalName = newName.trim();
+        await file.save();
+
+        // Create Audit Log entry for file rename
+        if (userId) {
+            await createAuditLog({
+                userId,
+                projectId: file.projectId,
+                action: "RENAME_FILE",
+                entityType: "File",
+                entityId: file._id,
+                details: {
+                    oldName,
+                    newName: file.originalName
+                }
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "File renamed successfully",
+            data: file
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to rename file",
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     uploadFile,
     getProjectFiles,
-    deleteFile
+    deleteFile,
+    renameFile
 };
+
