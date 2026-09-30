@@ -363,6 +363,66 @@ const verifyOtp = async (req, res) => {
     }
 };
 
+// 8. Send Joining Invitation Email
+const sendInviteEmail = async (req, res) => {
+    try {
+        const { email, inviteLink, projectName } = req.body;
+
+        if (!email || !inviteLink) {
+            return res.status(400).json({
+                success: false,
+                message: "Email and inviteLink are required"
+            });
+        }
+
+        const userEmailClean = email.toLowerCase().trim();
+        const pName = projectName || "Project Workspace";
+
+        try {
+            await sendEmail({
+                to: userEmailClean,
+                subject: `Invitation to join ${pName} - KasperTech DMS`,
+                text: `You have been invited to join ${pName}. Click the link to register and access: ${inviteLink}`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; padding: 25px; max-width: 550px; border: 1px solid #e2e8f0; border-radius: 10px; background-color: #ffffff;">
+                        <h2 style="color: #1e293b; margin-top: 0;">Project Invitation</h2>
+                        <p style="color: #475569; font-size: 15px; line-height: 1.5;">
+                            You have been invited to join the <strong>${pName}</strong> project workspace on KasperTech DMS.
+                        </p>
+                        <div style="margin: 25px 0; text-align: center;">
+                            <a href="${inviteLink}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; font-size: 15px;">
+                                Join Project Workspace
+                            </a>
+                        </div>
+                        <p style="color: #64748b; font-size: 13px;">
+                            If the button above does not work, copy and paste this link into your browser:<br/>
+                            <a href="${inviteLink}" style="color: #4f46e5; word-break: break-all;">${inviteLink}</a>
+                        </p>
+                        <hr style="border: none; border-top: 1px solid #f1f5f9; margin-top: 25px;" />
+                        <p style="color: #94a3b8; font-size: 12px; margin-bottom: 0;">
+                            KasperTech Document Management System
+                        </p>
+                    </div>
+                `
+            });
+        } catch (emailErr) {
+            console.error("Nodemailer Email Error:", emailErr.message);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Joining link sent to user email successfully"
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to send invitation email",
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     registerUser,
     loginUser,
@@ -370,6 +430,7 @@ module.exports = {
     getAllUsers,
     getUserById,
     sendOtp,
-    verifyOtp
+    verifyOtp,
+    sendInviteEmail
 };
 
