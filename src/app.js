@@ -7,6 +7,7 @@ const adminRoutes = require("./routes/admin.routes");
 const projectRoutes = require("./routes/projects.routes");
 const userRoutes = require("./routes/users.routes");
 const fileRoutes = require("./routes/file.routes");
+const folderRoutes = require("./routes/folder.routes");
 const seedDefaultAdmin = require("./utils/seedAdmin");
 
 const app = express();
@@ -34,5 +35,6 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/files", fileRoutes);
+app.use("/api/folders", folderRoutes);
 
 module.exports = app;

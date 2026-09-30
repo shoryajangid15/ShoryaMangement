@@ -1,6 +1,8 @@
 const File = require("../models/file.models");
+const ShareLink = require("../models/shareLink.models");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const createAuditLog = require("../utils/createAuditLog");
 const { getPaginationParams, formatPaginatedResponse } = require("../utils/paginate");
 
@@ -14,7 +16,7 @@ const uploadFile = async (req, res) => {
             });
         }
 
-        const { projectId, uploadedBy } = req.body;
+        const { projectId, uploadedBy, externalUrl, folderId } = req.body;
 
         if (!projectId || !uploadedBy) {
             // Remove uploaded file if validation fails
@@ -35,7 +37,9 @@ const uploadFile = async (req, res) => {
             path: req.file.path,
             fileUrl,
             mimeType: req.file.mimetype,
-            size: req.file.size
+            size: req.file.size,
+            externalUrl: externalUrl || null,
+            folderId: folderId || null
         });
 
         // Create Audit Log entry for file upload
@@ -201,10 +205,126 @@ const renameFile = async (req, res) => {
     }
 };
 
+// 5. Generate Share Link for File
+const generateShareLink = async (req, res) => {
+    try {
+        const { fileId, expiresInHours, isOneTime, userId } = req.body;
+
+        if (!fileId) {
+            return res.status(400).json({
+                success: false,
+                message: "fileId is required"
+            });
+        }
+
+        const file = await File.findById(fileId);
+        if (!file) {
+            return res.status(404).json({
+                success: false,
+                message: "File not found"
+            });
+        }
+
+        const token = crypto.randomBytes(16).toString("hex");
+
+        let expiresAt = null;
+        if (expiresInHours && !isNaN(expiresInHours)) {
+            expiresAt = new Date(Date.now() + parseFloat(expiresInHours) * 3600000);
+        }
+
+        const shareLink = await ShareLink.create({
+            fileId,
+            token,
+            expiresAt,
+            isOneTime: Boolean(isOneTime),
+            createdBy: userId || null
+        });
+
+        res.status(201).json({
+            success: true,
+            message: "Share link generated successfully",
+            data: {
+                token: shareLink.token,
+                shareUrl: `/api/files/shared/${shareLink.token}`,
+                expiresAt: shareLink.expiresAt,
+                isOneTime: shareLink.isOneTime
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to generate share link",
+            error: error.message
+        });
+    }
+};
+
+// 6. Access / Consume Shared File by Token
+const getSharedFile = async (req, res) => {
+    try {
+        const { token } = req.params;
+
+        const shareLink = await ShareLink.findOne({ token }).populate("fileId");
+        if (!shareLink) {
+            return res.status(404).json({
+                success: false,
+                message: "Share link not found or invalid"
+            });
+        }
+
+        if (shareLink.expiresAt && new Date() > new Date(shareLink.expiresAt)) {
+            return res.status(410).json({
+                success: false,
+                message: "This share link has expired"
+            });
+        }
+
+        if (shareLink.isOneTime && shareLink.isUsed) {
+            return res.status(410).json({
+                success: false,
+                message: "This one-time link has already been used"
+            });
+        }
+
+        const file = shareLink.fileId;
+        if (!file) {
+            return res.status(404).json({
+                success: false,
+                message: "Associated file no longer exists"
+            });
+        }
+
+        if (shareLink.isOneTime) {
+            shareLink.isUsed = true;
+        }
+        shareLink.accessCount += 1;
+        await shareLink.save();
+
+        res.status(200).json({
+            success: true,
+            data: {
+                fileName: file.originalName,
+                size: file.size,
+                mimeType: file.mimeType,
+                fileUrl: file.fileUrl,
+                externalUrl: file.externalUrl || null
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to access shared file",
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     uploadFile,
     getProjectFiles,
     deleteFile,
-    renameFile
+    renameFile,
+    generateShareLink,
+    getSharedFile
 };
 

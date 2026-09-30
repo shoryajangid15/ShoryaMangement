@@ -32,6 +32,15 @@ const fileSchema = new mongoose.Schema({
     },
     size: {
         type: mongoose.Schema.Types.Number
+    },
+    externalUrl: {
+        type: String,
+        default: null
+    },
+    folderId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Folder",
+        default: null
     }
 }, {
     timestamps: true
