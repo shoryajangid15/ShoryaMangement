@@ -52,79 +52,74 @@ const createProject = async (req, res) => {
     }
 };
 
-// 2. Add or Invite User to Project (Direct add if exists, else Invitation)
+// 2. Add or Invite User to Project (Supports single project or multi-project array format)
 const addOrInviteUserToProject = async (req, res) => {
     try {
-        const { projectId, email, permissions } = req.body;
+        const { email, projectId, permissions, projects } = req.body;
 
-        if (!projectId || !email) {
+        if (!email) {
             return res.status(400).json({
                 success: false,
-                message: "ProjectId and user email are required"
+                message: "Email is required"
             });
         }
 
-        const project = await Project.findById(projectId);
-        if (!project) {
-            return res.status(404).json({
+        let projectList = [];
+        if (Array.isArray(projects) && projects.length > 0) {
+            projectList = projects;
+        } else if (projectId) {
+            projectList = [{ projectId, permissions }];
+        }
+
+        if (projectList.length === 0) {
+            return res.status(400).json({
                 success: false,
-                message: "Project not found"
+                message: "At least one project with projectId must be provided"
             });
         }
-
-        const userPermissions = Array.isArray(permissions) && permissions.length > 0
-            ? permissions
-            : ["read"];
 
         const userEmailClean = email.toLowerCase().trim();
         const existingUser = await User.findOne({ email: userEmailClean });
 
-        if (existingUser) {
-            // Check if already a member of this project
-            const alreadyMember = await ProjectMember.findOne({
-                projectId,
-                userId: existingUser._id
-            });
+        let processedCount = 0;
 
-            if (alreadyMember) {
-                return res.status(400).json({
-                    success: false,
-                    message: "User is already a member of this project"
-                });
+        for (const item of projectList) {
+            const pId = item.projectId;
+            if (!pId) continue;
+
+            const userPermissions = Array.isArray(item.permissions) && item.permissions.length > 0
+                ? item.permissions
+                : ["read"];
+
+            const project = await Project.findById(pId);
+            if (!project) continue;
+
+            if (existingUser) {
+                // Add or update entry in ProjectMember for each project with specified permissions
+                await ProjectMember.findOneAndUpdate(
+                    { projectId: pId, userId: existingUser._id },
+                    { permissions: userPermissions },
+                    { upsert: true, new: true }
+                );
+            } else {
+                // Create or update entry in Invitation for each project
+                await Invitation.findOneAndUpdate(
+                    { email: userEmailClean, projectId: pId },
+                    {
+                        joinCode: project.joinCode,
+                        permissions: userPermissions,
+                        status: "pending"
+                    },
+                    { upsert: true, new: true }
+                );
             }
-
-            // Direct Add existing user to ProjectMember table with specific permissions
-            const newMember = await ProjectMember.create({
-                projectId,
-                userId: existingUser._id,
-                permissions: userPermissions
-            });
-
-            return res.status(200).json({
-                success: true,
-                message: "Existing user added directly to the project",
-                isDirectAdd: true,
-                data: newMember
-            });
-        } else {
-            // User not registered yet -> Create or Update Invitation
-            const invitation = await Invitation.findOneAndUpdate(
-                { email: userEmailClean, projectId },
-                {
-                    joinCode: project.joinCode,
-                    permissions: userPermissions,
-                    status: "pending"
-                },
-                { upsert: true, new: true }
-            );
-
-            return res.status(200).json({
-                success: true,
-                message: "Invitation saved. User will be added upon registration.",
-                isDirectAdd: false,
-                data: invitation
-            });
+            processedCount++;
         }
+
+        return res.status(200).json({
+            success: true,
+            message: `User invited to ${processedCount} project(s) successfully`
+        });
 
     } catch (error) {
         res.status(500).json({

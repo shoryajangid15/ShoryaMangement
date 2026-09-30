@@ -3,6 +3,7 @@ const User = require("../models/users.models");
 const Invitation = require("../models/invitation.models");
 const ProjectMember = require("../models/projectMembers.models");
 const createAuditLog = require("../utils/createAuditLog");
+const sendEmail = require("../utils/sendEmail");
 const { getPaginationParams, formatPaginatedResponse } = require("../utils/paginate");
 
 
@@ -191,7 +192,10 @@ const deleteUser = async (req, res) => {
 // 4. Get All Users (Paginated)
 const getAllUsers = async (req, res) => {
     try {
-        const { page, limit, skip } = getPaginationParams(req.query);
+        const page = parseInt(req.query.page) || 1;
+        // Increase default limit to 500 so all users load consistently
+        const limit = parseInt(req.query.limit) || 500;
+        const skip = (page - 1) * limit;
 
         const total = await User.countDocuments();
         const users = await User.find()
@@ -202,7 +206,13 @@ const getAllUsers = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            ...formatPaginatedResponse({ data: users, total, page, limit })
+            data: users,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
         });
     } catch (error) {
         res.status(500).json({
@@ -237,11 +247,129 @@ const getUserById = async (req, res) => {
     }
 };
 
+// 6. Send Verification OTP
+const sendOtp = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: "Email is required"
+            });
+        }
+
+        const userEmailClean = email.toLowerCase().trim();
+
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        // 10 minutes expiry
+        const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+        const user = await User.findOne({ email: userEmailClean });
+        if (user) {
+            user.otp = otp;
+            user.otpExpiresAt = otpExpiresAt;
+            await user.save();
+        }
+
+        // Send OTP HTML Email
+        try {
+            await sendEmail({
+                to: userEmailClean,
+                subject: "Your Email Verification OTP - KasperTech DMS",
+                text: `Your OTP for verification is ${otp}. It will expire in 10 minutes.`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 500px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                        <h2 style="color: #333;">Email Verification</h2>
+                        <p style="color: #555;">Use the following OTP to verify your email address:</p>
+                        <div style="background: #f4f4f7; padding: 15px; text-align: center; border-radius: 6px; font-size: 28px; font-weight: bold; letter-spacing: 6px; color: #4F46E5;">
+                            ${otp}
+                        </div>
+                        <p style="color: #888; font-size: 12px; margin-top: 15px;">This OTP is valid for 10 minutes. If you did not request this, please ignore this email.</p>
+                    </div>
+                `
+            });
+        } catch (emailErr) {
+            console.error("Nodemailer Email Error:", emailErr.message);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Verification OTP sent to your email"
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to send OTP",
+            error: error.message
+        });
+    }
+};
+
+// 7. Verify OTP
+const verifyOtp = async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            return res.status(400).json({
+                success: false,
+                message: "Email and OTP are required"
+            });
+        }
+
+        const userEmailClean = email.toLowerCase().trim();
+        const user = await User.findOne({ email: userEmailClean });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        if (!user.otp || user.otp !== otp.toString().trim()) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid OTP"
+            });
+        }
+
+        if (new Date() > new Date(user.otpExpiresAt)) {
+            return res.status(400).json({
+                success: false,
+                message: "OTP has expired"
+            });
+        }
+
+        user.isEmailVerified = true;
+        user.otp = null;
+        user.otpExpiresAt = null;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: "Email verified successfully"
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to verify OTP",
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     registerUser,
     loginUser,
     deleteUser,
     getAllUsers,
-    getUserById
+    getUserById,
+    sendOtp,
+    verifyOtp
 };
 

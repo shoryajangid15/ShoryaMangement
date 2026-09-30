@@ -26,6 +26,21 @@ const userSchema = new mongoose.Schema({
     mobile: {
         type: mongoose.Schema.Types.Number,
         required: true
+    },
+
+    isEmailVerified: {
+        type: mongoose.Schema.Types.Boolean,
+        default: false
+    },
+
+    otp: {
+        type: mongoose.Schema.Types.String,
+        default: null
+    },
+
+    otpExpiresAt: {
+        type: Date,
+        default: null
     }
 
 },
