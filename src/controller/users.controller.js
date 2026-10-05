@@ -1,7 +1,8 @@
-const bcrypt = require("bcryptjs");
+﻿const bcrypt = require("bcryptjs");
 const User = require("../models/users.models");
 const Invitation = require("../models/invitation.models");
 const ProjectMember = require("../models/projectMembers.models");
+const Otp = require("../models/otp.models");
 const createAuditLog = require("../utils/createAuditLog");
 const sendEmail = require("../utils/sendEmail");
 const { getPaginationParams, formatPaginatedResponse } = require("../utils/paginate");
@@ -36,8 +37,16 @@ const registerUser = async (req, res) => {
             email: userEmailClean,
             passwordHash: hashedPassword,
             mobile,
-            isActive: true
+            isActive: true,
+            isEmailVerified: true
         });
+
+        // Clean up any remaining OTP for this email
+        try {
+            await Otp.deleteMany({ email: userEmailClean });
+        } catch (e) {
+            // ignore
+        }
 
         // Check for any pending invitations for this email
         const pendingInvites = await Invitation.find({
@@ -266,6 +275,13 @@ const sendOtp = async (req, res) => {
         // 10 minutes expiry
         const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
+        // Store OTP in Otp collection (works for both existing users and invited/new users)
+        await Otp.findOneAndUpdate(
+            { email: userEmailClean },
+            { otp, expiresAt: otpExpiresAt },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+
         const user = await User.findOne({ email: userEmailClean });
         if (user) {
             user.otp = otp;
@@ -321,33 +337,61 @@ const verifyOtp = async (req, res) => {
         }
 
         const userEmailClean = email.toLowerCase().trim();
+        const inputOtp = otp.toString().trim();
+
+        // 1. Look up in Otp collection (works for invited users registering for first time)
+        const otpRecord = await Otp.findOne({ email: userEmailClean });
         const user = await User.findOne({ email: userEmailClean });
 
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "User not found"
-            });
-        }
+        let isOtpValid = false;
 
-        if (!user.otp || user.otp !== otp.toString().trim()) {
+        if (otpRecord) {
+            if (new Date() > new Date(otpRecord.expiresAt)) {
+                await Otp.deleteOne({ _id: otpRecord._id });
+                return res.status(400).json({
+                    success: false,
+                    message: "OTP has expired"
+                });
+            }
+
+            if (otpRecord.otp !== inputOtp) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid OTP"
+                });
+            }
+
+            isOtpValid = true;
+            await Otp.deleteOne({ _id: otpRecord._id });
+        } else if (user && user.otp) {
+            if (new Date() > new Date(user.otpExpiresAt)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "OTP has expired"
+                });
+            }
+
+            if (user.otp !== inputOtp) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid OTP"
+                });
+            }
+
+            isOtpValid = true;
+        } else {
             return res.status(400).json({
                 success: false,
-                message: "Invalid OTP"
+                message: "Invalid or expired OTP. Please click 'Resend Code' to receive a new OTP."
             });
         }
 
-        if (new Date() > new Date(user.otpExpiresAt)) {
-            return res.status(400).json({
-                success: false,
-                message: "OTP has expired"
-            });
+        if (user) {
+            user.isEmailVerified = true;
+            user.otp = null;
+            user.otpExpiresAt = null;
+            await user.save();
         }
-
-        user.isEmailVerified = true;
-        user.otp = null;
-        user.otpExpiresAt = null;
-        await user.save();
 
         res.status(200).json({
             success: true,
@@ -433,4 +477,3 @@ module.exports = {
     verifyOtp,
     sendInviteEmail
 };
-
