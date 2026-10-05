@@ -1,7 +1,7 @@
-const AuditLog = require("../models/auditLogs.models");
+﻿const AuditLog = require("../models/auditLogs.models");
+const createAuditLog = require("../utils/createAuditLog");
 const { getPaginationParams, formatPaginatedResponse } = require("../utils/paginate");
 
-// Get all audit logs for Admin (with optional projectId filter and pagination)
 const getAuditLogs = async (req, res) => {
     try {
         const { projectId } = req.query;
@@ -35,6 +35,39 @@ const getAuditLogs = async (req, res) => {
     }
 };
 
+const createAuditLogController = async (req, res) => {
+    try {
+        const { userId, adminId, projectId, action, entityType, entityId, details, userType } = req.body;
+        if (!action) {
+            return res.status(400).json({
+                success: false,
+                message: "Action is required"
+            });
+        }
+        const log = await createAuditLog({
+            userId,
+            adminId,
+            projectId,
+            action,
+            entityType,
+            entityId,
+            details,
+            userType
+        });
+        res.status(201).json({
+            success: true,
+            data: log
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to create audit log",
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
-    getAuditLogs
+    getAuditLogs,
+    createAuditLog: createAuditLogController
 };

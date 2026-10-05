@@ -1,33 +1,36 @@
-const AuditLog = require("../models/auditLogs.models");
+﻿const AuditLog = require("../models/auditLogs.models");
 const Admin = require("../models/admin.models");
 
-/**
- * Helper to log user/admin activities into AuditLog collection
- */
-const createAuditLog = async ({ userId, projectId, action, entityType, entityId, details }) => {
+const createAuditLog = async ({ userId, adminId, projectId, action, entityType, entityId, details, userType }) => {
     try {
-        if (!userId) return;
+        let finalUserType = userType || "User";
+        let finalAdminId = adminId || null;
+        let finalUserId = userId || null;
 
-        // Check if performing user is System Admin or normal User
-        const isAdmin = await Admin.findById(userId);
+        if (userId && !adminId && !userType) {
+            try {
+                const isAdmin = await Admin.findById(userId);
+                if (isAdmin) {
+                    finalAdminId = userId;
+                    finalUserId = null;
+                    finalUserType = "Admin";
+                }
+            } catch (e) {}
+        }
 
         const logData = {
+            adminId: finalAdminId,
+            userId: finalUserId,
+            userType: finalUserType,
             projectId: projectId || null,
             action,
-            entityType,
+            entityType: entityType || "System",
             entityId: entityId || null,
             details: details || {}
         };
 
-        if (isAdmin) {
-            logData.adminId = userId;
-            logData.userType = "Admin";
-        } else {
-            logData.userId = userId;
-            logData.userType = "User";
-        }
-
-        await AuditLog.create(logData);
+        const created = await AuditLog.create(logData);
+        return created;
     } catch (error) {
         console.error("Failed to create Audit Log:", error.message);
     }

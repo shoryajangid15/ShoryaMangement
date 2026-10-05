@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+﻿const mongoose = require("mongoose");
 
 const auditLogSchema = new mongoose.Schema({
     userId: {
@@ -24,11 +24,10 @@ const auditLogSchema = new mongoose.Schema({
     },
     entityType: {
         type: mongoose.Schema.Types.String,
-        enum: ["Project", "Material", "Role", "User", "ProjectMember", "File"],
-        required: true
+        default: "System"
     },
     entityId: {
-        type: mongoose.Schema.Types.ObjectId
+        type: mongoose.Schema.Types.Mixed
     },
     details: {
         type: mongoose.Schema.Types.Mixed

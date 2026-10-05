@@ -8,7 +8,6 @@ const sendEmail = require("../utils/sendEmail");
 const { getPaginationParams, formatPaginatedResponse } = require("../utils/paginate");
 
 
-// 1. Register User (Checks for Pending Project Invites)
 const registerUser = async (req, res) => {
     try {
         const { name, email, password, mobile } = req.body;
@@ -41,14 +40,10 @@ const registerUser = async (req, res) => {
             isEmailVerified: true
         });
 
-        // Clean up any remaining OTP for this email
         try {
             await Otp.deleteMany({ email: userEmailClean });
-        } catch (e) {
-            // ignore
-        }
+        } catch (e) {}
 
-        // Check for any pending invitations for this email
         const pendingInvites = await Invitation.find({
             email: userEmailClean,
             status: "pending"
@@ -67,6 +62,20 @@ const registerUser = async (req, res) => {
             await invite.save();
             joinedProjectsCount++;
         }
+
+        await createAuditLog({
+            userId: newUser._id,
+            userType: "User",
+            action: "USER_REGISTER",
+            entityType: "User",
+            entityId: newUser._id,
+            details: {
+                name: newUser.name,
+                email: newUser.email,
+                joinedProjectsCount,
+                description: `Completed account registration (${newUser.email})`
+            }
+        });
 
         res.status(201).json({
             success: true,
@@ -89,7 +98,6 @@ const registerUser = async (req, res) => {
     }
 };
 
-// 2. User Login
 const loginUser = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -126,9 +134,22 @@ const loginUser = async (req, res) => {
             });
         }
 
-        // Fetch user's projects with permissions
         const userProjects = await ProjectMember.find({ userId: user._id })
             .populate("projectId", "name description joinCode status");
+
+        await createAuditLog({
+            userId: user._id,
+            userType: "User",
+            action: "USER_LOGIN",
+            entityType: "User",
+            entityId: user._id,
+            details: {
+                name: user.name,
+                email: user.email,
+                role: "Member",
+                description: `Authenticated successfully as Member (${user.email})`
+            }
+        });
 
         res.status(200).json({
             success: true,
@@ -150,7 +171,6 @@ const loginUser = async (req, res) => {
     }
 };
 
-// 3. Delete User
 const deleteUser = async (req, res) => {
     try {
         const { id } = req.params;
@@ -164,22 +184,21 @@ const deleteUser = async (req, res) => {
             });
         }
 
-        // Remove user's project memberships
         await ProjectMember.deleteMany({ userId: id });
-
-        // Remove user's pending invitations if any
         await Invitation.deleteMany({ email: user.email });
-
-        // Delete user
         await User.findByIdAndDelete(id);
 
         if (performingUserId) {
             await createAuditLog({
                 userId: performingUserId,
-                action: "delete_user",
+                action: "USER_DELETE",
                 entityType: "User",
                 entityId: id,
-                details: { deletedUserEmail: user.email, deletedUserName: user.name }
+                details: {
+                    deletedUserEmail: user.email,
+                    deletedUserName: user.name,
+                    description: `Removed user account ${user.name} (${user.email})`
+                }
             });
         }
 
@@ -198,11 +217,9 @@ const deleteUser = async (req, res) => {
     }
 };
 
-// 4. Get All Users (Paginated)
 const getAllUsers = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
-        // Increase default limit to 500 so all users load consistently
         const limit = parseInt(req.query.limit) || 500;
         const skip = (page - 1) * limit;
 
@@ -232,7 +249,6 @@ const getAllUsers = async (req, res) => {
     }
 };
 
-// 5. Get User By ID
 const getUserById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -256,7 +272,6 @@ const getUserById = async (req, res) => {
     }
 };
 
-// 6. Send Verification OTP
 const sendOtp = async (req, res) => {
     try {
         const { email } = req.body;
@@ -270,12 +285,9 @@ const sendOtp = async (req, res) => {
 
         const userEmailClean = email.toLowerCase().trim();
 
-        // Generate 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        // 10 minutes expiry
         const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-        // Store OTP in Otp collection (works for both existing users and invited/new users)
         await Otp.findOneAndUpdate(
             { email: userEmailClean },
             { otp, expiresAt: otpExpiresAt },
@@ -289,7 +301,6 @@ const sendOtp = async (req, res) => {
             await user.save();
         }
 
-        // Send OTP HTML Email
         try {
             await sendEmail({
                 to: userEmailClean,
@@ -324,7 +335,6 @@ const sendOtp = async (req, res) => {
     }
 };
 
-// 7. Verify OTP
 const verifyOtp = async (req, res) => {
     try {
         const { email, otp } = req.body;
@@ -339,7 +349,6 @@ const verifyOtp = async (req, res) => {
         const userEmailClean = email.toLowerCase().trim();
         const inputOtp = otp.toString().trim();
 
-        // 1. Look up in Otp collection (works for invited users registering for first time)
         const otpRecord = await Otp.findOne({ email: userEmailClean });
         const user = await User.findOne({ email: userEmailClean });
 
@@ -407,7 +416,6 @@ const verifyOtp = async (req, res) => {
     }
 };
 
-// 8. Send Joining Invitation Email
 const sendInviteEmail = async (req, res) => {
     try {
         const { email, inviteLink, projectName } = req.body;
@@ -452,6 +460,16 @@ const sendInviteEmail = async (req, res) => {
         } catch (emailErr) {
             console.error("Nodemailer Email Error:", emailErr.message);
         }
+
+        await createAuditLog({
+            action: "USER_INVITE",
+            entityType: "User",
+            details: {
+                email: userEmailClean,
+                projectName: pName,
+                description: `Generated project invitation for ${userEmailClean} (${pName})`
+            }
+        });
 
         res.status(200).json({
             success: true,

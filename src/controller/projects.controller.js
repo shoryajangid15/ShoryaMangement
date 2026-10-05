@@ -1,4 +1,4 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const Project = require("../models/projects.models");
 const ProjectMember = require("../models/projectMembers.models");
 const User = require("../models/users.models");
@@ -8,7 +8,6 @@ const createAuditLog = require("../utils/createAuditLog");
 const generateJoinCode = require("../utils/generateJoinCode");
 const { getPaginationParams, formatPaginatedResponse } = require("../utils/paginate");
 
-// 1. Create a New Project (Only Admin)
 const createProject = async (req, res) => {
     try {
         const { name, description, createdBy, defaultRoleId } = req.body;
@@ -31,11 +30,22 @@ const createProject = async (req, res) => {
             status: "active"
         });
 
-        // Add creator/admin as project member with full permissions
         await ProjectMember.create({
             projectId: project._id,
             userId: createdBy,
             permissions: ["create", "read", "update", "delete"]
+        });
+
+        await createAuditLog({
+            userId: createdBy,
+            projectId: project._id,
+            action: "CREATE_PROJECT",
+            entityType: "Project",
+            entityId: project._id,
+            details: {
+                projectName: project.name,
+                description: `Created new project '${project.name}'`
+            }
         });
 
         res.status(201).json({
@@ -52,7 +62,6 @@ const createProject = async (req, res) => {
     }
 };
 
-// 2. Add or Invite User to Project (Supports single project or multi-project array format)
 const addOrInviteUserToProject = async (req, res) => {
     try {
         const { email, projectId, permissions, projects } = req.body;
@@ -95,14 +104,12 @@ const addOrInviteUserToProject = async (req, res) => {
             if (!project) continue;
 
             if (existingUser) {
-                // Add or update entry in ProjectMember for each project with specified permissions
                 await ProjectMember.findOneAndUpdate(
                     { projectId: pId, userId: existingUser._id },
                     { permissions: userPermissions },
                     { upsert: true, new: true }
                 );
             } else {
-                // Create or update entry in Invitation for each project
                 await Invitation.findOneAndUpdate(
                     { email: userEmailClean, projectId: pId },
                     {
@@ -115,6 +122,16 @@ const addOrInviteUserToProject = async (req, res) => {
             }
             processedCount++;
         }
+
+        await createAuditLog({
+            action: "USER_INVITE",
+            entityType: "User",
+            details: {
+                email: userEmailClean,
+                projectCount: processedCount,
+                description: `Invited user ${userEmailClean} to ${processedCount} project(s)`
+            }
+        });
 
         return res.status(200).json({
             success: true,
@@ -130,7 +147,6 @@ const addOrInviteUserToProject = async (req, res) => {
     }
 };
 
-// 3. Update Member Permissions in a Project
 const updateMemberPermissions = async (req, res) => {
     try {
         const { projectId, userId, permissions } = req.body;
@@ -154,6 +170,18 @@ const updateMemberPermissions = async (req, res) => {
         member.permissions = permissions;
         await member.save();
 
+        await createAuditLog({
+            projectId,
+            action: "PERMISSION_UPDATE",
+            entityType: "ProjectMember",
+            entityId: member._id,
+            details: {
+                userId,
+                permissions,
+                description: `Updated permissions for project member`
+            }
+        });
+
         res.status(200).json({
             success: true,
             message: "Member permissions updated successfully",
@@ -168,7 +196,6 @@ const updateMemberPermissions = async (req, res) => {
     }
 };
 
-// 4. Get Project Members with Permissions (Paginated)
 const getProjectMembers = async (req, res) => {
     try {
         const { projectId } = req.params;
@@ -196,7 +223,6 @@ const getProjectMembers = async (req, res) => {
     }
 };
 
-// 5. Get All Projects (Paginated)
 const getAllProjects = async (req, res) => {
     try {
         const { page, limit, skip } = getPaginationParams(req.query);
@@ -221,7 +247,6 @@ const getAllProjects = async (req, res) => {
     }
 };
 
-// 6. Delete Project
 const deleteProject = async (req, res) => {
     try {
         const { projectId } = req.params;
@@ -242,7 +267,6 @@ const deleteProject = async (req, res) => {
             });
         }
 
-        // 1. Delete associated files documents & disk files
         try {
             const files = await File.find({ projectId });
             for (const file of files) {
@@ -255,16 +279,10 @@ const deleteProject = async (req, res) => {
             console.warn("Could not delete project files:", fileErr.message);
         }
 
-        // 2. Delete associated project members
         await ProjectMember.deleteMany({ projectId });
-
-        // 3. Delete associated invitations
         await Invitation.deleteMany({ projectId });
-
-        // 4. Delete the project itself
         await Project.findByIdAndDelete(projectId);
 
-        // 5. Create audit log
         try {
             const adminId = req.headers.authorization ? req.headers.authorization.replace("Bearer ", "") : null;
             await createAuditLog({
@@ -273,7 +291,7 @@ const deleteProject = async (req, res) => {
                 action: "PROJECT_DELETE",
                 entityType: "Project",
                 entityId: projectId,
-                details: { projectName: project.name }
+                details: { projectName: project.name, description: `Deleted project '${project.name}'` }
             });
         } catch (auditErr) {}
 
@@ -290,7 +308,6 @@ const deleteProject = async (req, res) => {
     }
 };
 
-// 7. Update Project Details (Name, Description, Status)
 const updateProject = async (req, res) => {
     try {
         const { projectId } = req.params;
@@ -336,7 +353,8 @@ const updateProject = async (req, res) => {
                 details: {
                     updatedName: project.name,
                     updatedDescription: project.description,
-                    updatedStatus: project.status
+                    updatedStatus: project.status,
+                    description: `Updated project '${project.name}' details`
                 }
             });
         }
@@ -355,7 +373,6 @@ const updateProject = async (req, res) => {
     }
 };
 
-// 8. Get Single Project By ID
 const getProjectById = async (req, res) => {
     try {
         const { projectId } = req.params;

@@ -1,5 +1,6 @@
-const bcrypt = require("bcryptjs");
+﻿const bcrypt = require("bcryptjs");
 const Admin = require("../models/admin.models");
+const createAuditLog = require("../utils/createAuditLog");
 
 const loginAdmin = async (req, res) => {
     try {
@@ -21,7 +22,6 @@ const loginAdmin = async (req, res) => {
             });
         }
 
-        
         const isMatch = await bcrypt.compare(password, admin.passwordHash);
 
         if (!isMatch) {
@@ -37,6 +37,20 @@ const loginAdmin = async (req, res) => {
                 message: "Admin account is inactive"
             });
         }
+
+        await createAuditLog({
+            adminId: admin._id,
+            userType: "Admin",
+            action: "USER_LOGIN",
+            entityType: "Admin",
+            entityId: admin._id,
+            details: {
+                target: "Admin",
+                email: admin.email,
+                role: "Admin",
+                description: `Authenticated successfully as Admin (${admin.email})`
+            }
+        });
 
         res.status(200).json({
             success: true,
@@ -107,4 +121,3 @@ module.exports = {
     loginAdmin,
     registerAdmin
 };
-
